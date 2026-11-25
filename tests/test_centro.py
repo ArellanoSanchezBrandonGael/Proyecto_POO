@@ -201,7 +201,23 @@ class CentroDeportivoTests(unittest.TestCase):
             self.assertEqual(resultado["reservas_activas"], 5)
             self.assertEqual(
                 self.centro._serializar(), estado_original)
+    def test_reporte_ocupacion_por_hora(self):
+        self.centro.registrar_acceso(
+            "VISITA-1", "gimnasio", "entrada",
+            datetime(2026, 11, 23, 10, 0))
 
+        self.centro.registrar_acceso(
+            "VISITA-1", "gimnasio", "salida",
+            datetime(2026, 11, 23, 13, 0))
+
+        ruta = self.centro.repository.ruta.parent / "reporte.txt"
+        reporte = self.centro.reporte_mes("2026-11", ruta)
+
+        self.assertIn("2026-11-23 10:00: 1\n", reporte)
+        self.assertIn("2026-11-23 11:00: 1\n", reporte)
+        self.assertIn("2026-11-23 12:00: 1\n", reporte)
+        self.assertIn("2026-11-23 13:00: 0\n", reporte)
+        self.assertTrue(ruta.exists())
 
 if __name__ == "__main__":
     unittest.main()

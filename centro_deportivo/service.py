@@ -382,19 +382,37 @@ class CentroDeportivo:
         aforo_por_hora = {}
         ocupacion = 0
 
-        for registro in sorted(self.accesos, key=lambda r: r.momento):
-            if registro.area != "gimnasio":
-                continue
+        inicio = datetime.strptime(mes, "%Y-%m")
 
-            if registro.accion == "entrada":
-                ocupacion += 1
-            else:
-                ocupacion = max(0, ocupacion - 1)
+        if inicio.month == 12:
+            fin = datetime(inicio.year + 1, 1, 1)
+        else:
+            fin = datetime(inicio.year, inicio.month + 1, 1)
 
-            if registro.momento.strftime("%Y-%m") == mes:
-                clave = registro.momento.strftime("%Y-%m-%d %H:00")
+        registros = sorted(
+            [r for r in self.accesos if r.area == "gimnasio"],
+            key=lambda r: r.momento
+        )
+
+        indice = 0
+        hora = inicio
+
+        while hora < fin:
+            siguiente_hora = hora + timedelta(hours=1)
+
+            while indice < len(registros) and registros[indice].momento < siguiente_hora:
+                if registros[indice].accion == "entrada":
+                    ocupacion += 1
+                else:
+                    ocupacion = max(0, ocupacion - 1)
+
+                indice += 1
+
+            if hora.weekday() < 6 and 6 <= hora.hour < 22:
+                clave = hora.strftime("%Y-%m-%d %H:00")
                 aforo_por_hora[clave] = ocupacion
 
+            hora = siguiente_hora
         lineas = [f"Reporte del centro deportivo - {mes}", ""]
         lineas.append("Ingresos:")
         if ingresos:
