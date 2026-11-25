@@ -11,6 +11,7 @@ class Membresia(ABC):
     """Contrato comun para las reglas de cada plan de membresia."""
 
     def __init__(self, tipo: str, precio: float, vigencia: datetime):
+        """Inicializa el tipo, precio y vigencia del plan"""
         self.tipo = tipo
         self.precio = precio
         self.vigencia = vigencia
@@ -21,11 +22,11 @@ class Membresia(ABC):
 
     @abstractmethod
     def permite_area(self, area: str) -> bool:
-        """Indica si el socio puede usar un area."""
+        """comprueba si el plan permite el acceso al area."""
 
     @abstractmethod
     def permite_entrada(self, ahora: datetime) -> bool:
-        """Indica si el socio puede entrar a las instalaciones."""
+        """Comprueba las restricciones de horario del plan."""
 
     def renovar(self, ahora: datetime) -> None:
         """Agrega treinta dias desde el vencimiento o desde la fecha actual."""
@@ -37,6 +38,7 @@ class MembresiaEstudiante(Membresia):
     """Plan economico limitado al gimnasio y al horario universitario."""
 
     def __init__(self, vigencia: datetime):
+        """Inicializa el plan de estudiante"""
         super().__init__("estudiante", 300.0, vigencia)
 
     def permite_area(self, area: str) -> bool:
@@ -50,6 +52,7 @@ class MembresiaGeneral(Membresia):
     """Plan general con acceso al gimnasio durante todo el horario."""
 
     def __init__(self, vigencia: datetime):
+        """Inicializa el plan general"""
         super().__init__("general", 700.0, vigencia)
 
     def permite_area(self, area: str) -> bool:
@@ -63,6 +66,7 @@ class MembresiaPremium(Membresia):
     """Plan completo con acceso al gimnasio, alberca y clases."""
 
     def __init__(self, vigencia: datetime):
+        """Inicializa el plan premium"""
         super().__init__("premium", 1100.0, vigencia)
 
     def permite_area(self, area: str) -> bool:
@@ -76,7 +80,9 @@ class Socio:
     """Persona registrada, su plan, sus reservas y sus faltas."""
 
     def __init__(self, socio_id: str, nombre: str, apellido: str,
+    
                  es_alumno: bool = False):
+        """Inicializa los datos y reservas del socio"""
         self.socio_id = socio_id
         self.nombre = nombre
         self.apellido = apellido
@@ -89,11 +95,19 @@ class Socio:
     @property
     def nombre_completo(self) -> str:
         return f"{self.nombre} {self.apellido}".strip()
+    @property
+    def nombre_completo(self) -> str:
+        """Devuelve el nombre completo del socio."""
+        return f"{self.nombre} {self.apellido}".strip()
 
     def contar_faltas(self, mes: str) -> int:
         return self._faltas_mes.get(mes, 0)
+    def contar_faltas(self, mes: str) -> int:
+        """Devuelve la cantidad de faltas del socio en un mes."""
+        return self._faltas_mes.get(mes, 0)
 
     def agregar_falta(self, ahora: datetime) -> None:
+        """Registra una falta y aplica la suspension correspondiente."""
         mes = ahora.strftime("%Y-%m")
         total = self.contar_faltas(mes) + 1
         self._faltas_mes[mes] = total
@@ -105,6 +119,7 @@ class Visitante:
     """Persona sin membresia que compra un pase diario al gimnasio."""
 
     def __init__(self, visitante_id: str, nombre: str, fecha: datetime):
+        """Inicializa los datos del visitante y su pase diario"""
         self.visitante_id = visitante_id
         self.nombre = nombre
         self.fecha = fecha
@@ -116,6 +131,7 @@ class Clase:
 
     def __init__(self, clase_id: str, nombre: str, instructor: str,
                  horario: datetime, cupo: int):
+        """Inicializa la actividad grupal y su cupo"""
         self.clase_id = clase_id
         self.nombre = nombre
         self.instructor = instructor
@@ -178,6 +194,7 @@ class Reserva:
 
     def __init__(self, folio: str, socio: Socio, clase: Clase,
                  creada: datetime):
+        """INicializa una reserva de clase"""
         self.folio = folio
         self.socio = socio
         self.clase = clase
@@ -190,6 +207,7 @@ class RegistroAcceso:
 
     def __init__(self, registro_id: str, persona_id: str, tipo_persona: str,
                  accion: str, area: str, momento: datetime):
+        """Inicializa in movimiento de entrada o salida"""
         self.registro_id = registro_id
         self.persona_id = persona_id
         self.tipo_persona = tipo_persona
