@@ -139,12 +139,20 @@ class CentroDeportivo:
         self.repository.guardar(self._serializar())
 
     def importar_alumnos(self, ruta: Path) -> list[str]:
-        """Carga alumnos validos y devuelve los errores de filas rechazadas."""
+        """Actualiza el padron de alumnos e informa las filas rechazadas."""
         validos, errores = leer_alumnos(ruta)
+
+        if not validos:
+            return errores
+
         with self.lock:
+            self.alumnos.clear()
+
             for alumno in validos:
                 self.alumnos[alumno["id"]] = alumno
+
             self.guardar()
+
         return errores
 
     def registrar_socio(self, nombre: str, apellido: str,

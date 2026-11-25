@@ -308,6 +308,39 @@ class CentroDeportivoTests(unittest.TestCase):
         with self.assertRaises(ValidacionError):
             self.centro.renovar_membresia(
                 socio.socio_id, self.ahora)
+    def test_actualizar_padron_alumnos(self):
+        ruta = self.centro.repository.ruta.parent / "alumnos.csv"
+
+        self.centro.alumnos["A001"] = {
+            "id": "A001",
+            "nombre": "Ana",
+            "apellido": "Lopez"
+        }
+
+        ruta.write_text(
+            "id,nombre,apellido\nA002,Pedro,Perez\n",
+            encoding="utf-8")
+
+        self.centro.importar_alumnos(ruta)
+
+        self.assertNotIn("A001", self.centro.alumnos)
+        self.assertIn("A002", self.centro.alumnos)
+
+    def test_padron_invalido_no_elimina_alumnos(self):
+        ruta = self.centro.repository.ruta.parent / "alumnos.csv"
+
+        self.centro.alumnos["A001"] = {
+            "id": "A001",
+            "nombre": "Ana",
+            "apellido": "Lopez"
+        }
+
+        ruta.write_text("archivo incorrecto", encoding="utf-8")
+
+        errores = self.centro.importar_alumnos(ruta)
+
+        self.assertTrue(errores)
+        self.assertIn("A001", self.centro.alumnos)
 
 if __name__ == "__main__":
     unittest.main()
