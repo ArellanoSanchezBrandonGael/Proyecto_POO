@@ -290,6 +290,24 @@ class CentroDeportivoTests(unittest.TestCase):
         otra_clase.reservar(reserva, fin_bloqueo)
 
         self.assertEqual(len(otra_clase.reservas), 1)
+    def test_renovacion_estudiante_no_inscrito(self):
+        socio = self.centro.registrar_socio(
+            "Ana", "Lopez", True)
+
+        self.centro.alumnos["A001"] = {
+            "id": "A001",
+            "nombre": "Ana",
+            "apellido": "Lopez"
+        }
+
+        self.centro.contratar_membresia(
+            socio.socio_id, "estudiante", self.ahora)
+
+        self.centro.alumnos.clear()
+
+        with self.assertRaises(ValidacionError):
+            self.centro.renovar_membresia(
+                socio.socio_id, self.ahora)
 
 if __name__ == "__main__":
     unittest.main()

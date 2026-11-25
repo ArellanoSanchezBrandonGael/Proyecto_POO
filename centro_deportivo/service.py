@@ -197,6 +197,15 @@ class CentroDeportivo:
             socio = self.socios.get(socio_id)
             if not socio or not socio.membresia:
                 raise ValidacionError("El socio no tiene membresia.")
+            if socio.membresia.tipo == "estudiante":
+                inscrito = any(
+                    alumno.get("nombre", "").lower() == socio.nombre.lower()
+                    and alumno.get("apellido", "").lower() == socio.apellido.lower()
+                    for alumno in self.alumnos.values()
+                )
+
+                if not socio.es_alumno or not inscrito:
+                    raise ValidacionError("El socio no aparece en el archivo de alumnos inscritos.")
             socio.membresia.renovar(ahora)
             mes = ahora.strftime("%Y-%m")
             clave = f"{mes}:{socio.membresia.tipo}"
