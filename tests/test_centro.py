@@ -341,6 +341,36 @@ class CentroDeportivoTests(unittest.TestCase):
 
         self.assertTrue(errores)
         self.assertIn("A001", self.centro.alumnos)
+    def test_importar_clase_duplicada(self):
+        ruta = self.centro.repository.ruta.parent / "clases.csv"
+
+        ruta.write_text(
+            "id,nombre,instructor,horario,cupo\n"
+            "CL1,Yoga,Ana,2026-11-23 12:00,5\n",
+            encoding="utf-8")
+
+        self.centro.cargar_clases(ruta)
+        clase_original = self.centro.clases["CL1"]
+
+        errores = self.centro.cargar_clases(ruta)
+
+        self.assertTrue(errores)
+        self.assertIs(
+            self.centro.clases["CL1"], clase_original)
+
+    def test_clase_fuera_de_horario(self):
+        ruta = self.centro.repository.ruta.parent / "clases.csv"
+
+        ruta.write_text(
+            "id,nombre,instructor,horario,cupo\n"
+            "CL1,Yoga,Ana,2026-11-29 10:00,5\n"
+            "CL2,Natacion,Pedro,2026-11-23 23:00,10\n",
+            encoding="utf-8")
+
+        errores = self.centro.cargar_clases(ruta)
+
+        self.assertEqual(len(errores), 2)
+        self.assertEqual(len(self.centro.clases), 0)     
 
 if __name__ == "__main__":
     unittest.main()

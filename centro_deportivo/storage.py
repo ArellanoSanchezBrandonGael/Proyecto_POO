@@ -122,6 +122,8 @@ def leer_clases(ruta: Path) -> tuple[list[dict], list[str]]:
                             nombre = (fila.get("nombre") or "").strip()
                             instructor = (fila.get("instructor") or "").strip()
                             horario = parse_datetime(fila.get("horario") or "")
+                            if horario.weekday() == 6 or not (6 <= horario.hour < 22):
+                                raise ValueError("La clase esta fuera del horario del centro deportivo")
                             cupo = int((fila.get("cupo") or "").strip())
                             if not clase_id or not nombre or not instructor:
                                 raise ValueError(

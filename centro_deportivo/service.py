@@ -226,13 +226,28 @@ class CentroDeportivo:
         return self.contratar_membresia(socio_id, tipo, ahora)
 
     def cargar_clases(self, ruta: Path) -> list[str]:
-        """Importa las clases validas de un archivo CSV."""
+        """Importa clases validas sin reemplazar las existentes."""
         validos, errores = leer_clases(ruta)
+
         with self.lock:
             for item in validos:
-                clase = Clase(item["id"], item["nombre"], item["instructor"], item["horario"], item["cupo"])
+                if item["id"] in self.clases:
+                    errores.append(
+                        f"La clase {item['id']} ya existe.")
+                    continue
+
+                clase = Clase(
+                    item["id"],
+                    item["nombre"],
+                    item["instructor"],
+                    item["horario"],
+                    item["cupo"]
+                )
+
                 self.clases[clase.clase_id] = clase
+
             self.guardar()
+
         return errores
 
     def registrar_acceso(self, persona_id: str, area: str, accion: str, ahora: datetime) -> str:
