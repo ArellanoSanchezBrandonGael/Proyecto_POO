@@ -148,21 +148,30 @@ class Clase:
         reserva.socio.reservas.append(reserva)
 
     def cancelar_reserva(self, reserva: "Reserva", ahora: datetime) -> None:
-        """Actualiza el estado cuando se cancela con suficiente anticipacion."""
-        if self.horario - ahora < timedelta(hours=2):
-            raise ValidacionError("La reserva solo se puede cancelar hasta 2 horas antes.")
-        reserva.estado = "cancelada"
+            """Cancela una reserva activa con suficiente anticipacion."""
+            if reserva.estado != "reservada":
+                raise ValidacionError("La reserva no esta activa.")
+
+            if self.horario - ahora < timedelta(hours=2):
+                raise ValidacionError("La reserva solo se puede cancelar hasta 2 horas antes.")
+
+            reserva.estado = "cancelada"
 
     def pasar_lista(self, socio_id: str, ahora: datetime, asistio: bool) -> None:
-        """Marca asistencia o falta y actualiza la cuenta mensual del socio."""
-        reserva = next((r for r in self.reservas
-                        if r.socio.socio_id == socio_id and r.estado == "reservada"), None)
-        if reserva is None:
-            raise ValidacionError("No existe una reserva activa para ese socio.")
-        reserva.estado = "asistio" if asistio else "falto"
-        if not asistio:
-            reserva.socio.agregar_falta(ahora)
+            """Marca asistencia o falta y actualiza la cuenta mensual del socio."""
+            if ahora < self.horario:
+                raise ValidacionError("La clase todavia no comienza.")
 
+            reserva = next((r for r in self.reservas
+                            if r.socio.socio_id == socio_id and r.estado == "reservada"), None)
+
+            if reserva is None:
+                raise ValidacionError("No existe una reserva activa para ese socio.")
+
+            reserva.estado = "asistio" if asistio else "falto"
+
+            if not asistio:
+                reserva.socio.agregar_falta(ahora)
 
 class Reserva:
     """Relacion entre un socio y una clase con estado de asistencia."""

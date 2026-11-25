@@ -131,6 +131,32 @@ class CentroDeportivoTests(unittest.TestCase):
         self.assertNotIn("VISITA-1", self.centro.visitantes)
         self.assertEqual(self.centro.ingresos, {})
         self.assertEqual(self.centro.personas_en_gimnasio, 0)
+    def test_no_cancelar_reserva_inactiva(self):
+            from centro_deportivo.models import Clase, Socio, Reserva
+
+            clase = Clase("CL1", "Yoga", "Ana",
+                      datetime(2026, 11, 23, 14, 0), 10)
+            socio = Socio("SOC1", "Ana", "Lopez")
+            reserva = Reserva("RES1", socio, clase, self.ahora)
+
+            clase.reservar(reserva, self.ahora)
+            clase.cancelar_reserva(reserva, self.ahora)
+
+            with self.assertRaises(ValidacionError):
+                clase.cancelar_reserva(reserva, self.ahora)
+
+    def test_no_pasar_lista_antes_de_clase(self):
+        from centro_deportivo.models import Clase, Socio, Reserva
+
+        clase = Clase("CL1", "Yoga", "Ana",
+                      datetime(2026, 11, 23, 14, 0), 10)
+        socio = Socio("SOC1", "Ana", "Lopez")
+        reserva = Reserva("RES1", socio, clase, self.ahora)
+
+        clase.reservar(reserva, self.ahora)
+
+        with self.assertRaises(ValidacionError):
+            clase.pasar_lista("SOC1", self.ahora, True)
 
 
 if __name__ == "__main__":
