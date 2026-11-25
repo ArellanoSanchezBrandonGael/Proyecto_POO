@@ -423,76 +423,70 @@ class CentroDeportivo:
 
     def simular_hora_pico(self, ahora: datetime,
                           personas: int = 120) -> dict:
-        """Simula entradas simultaneas y reservas para poner a prueba los cupos."""
-        errores: list[str] = []
+        """Simula accesos y reservas simultaneas."""
+        errores = []
+        hilos = []
 
-        for clase in self.clases.values():
-            if clase.horario <= ahora:
-                continue
-            disponibles = clase.lugares_disponibles
-            break
-
-        def torniquete(indice: int) -> None:
+        def torniquete(indice):
             for i in range(personas // 4):
                 persona_id = f"SIM-{indice}-{i}"
-                if random.choice([True, False]):
-                    try:
-                        self.registrar_acceso(persona_id, "gimnasio",
-                                              "entrada", ahora)
-                    except ValidacionError as exc:
-                        if "Aforo completo" not in str(exc):
-                            errores.append(str(exc))
-                else:
-                    try:
-                        self.registrar_acceso(persona_id, "gimnasio",
-                                              "salida", ahora)
-                    except ValidacionError:
-                        pass
 
-        hilos = [threading.Thread(target=torniquete, args=(i,))
-                 for i in range(4)]
+                try:
+                    self.registrar_acceso(
+                        persona_id, "gimnasio", "entrada", ahora)
+
+                    if random.choice([True, False]):
+                        self.registrar_acceso(
+                            persona_id, "gimnasio", "salida", ahora)
+
+                except ValidacionError as exc:
+                    errores.append(str(exc))
+
+        def reservar_clase(socio_id, clase_id):
+            try:
+                self.reservar(socio_id, clase_id, ahora)
+            except ValidacionError as exc:
+                errores.append(str(exc))
+
+        for i in range(4):
+            hilo = threading.Thread(
+                target=torniquete, args=(i,))
+            hilos.append(hilo)
+
+        for clase in self.clases.values():
+            anticipacion = clase.horario - ahora
+
+            if timedelta(0) < anticipacion <= timedelta(hours=48):
+                cantidad = clase.lugares_disponibles + 5
+
+                for i in range(cantidad):
+                    socio = self.registrar_socio(
+                        f"Simulado{i}", "Prueba")
+
+                    self.contratar_membresia(
+                        socio.socio_id, "premium", ahora)
+
+                    hilo = threading.Thread(
+                        target=reservar_clase,
+                        args=(socio.socio_id, clase.clase_id))
+
+                    hilos.append(hilo)
+
+                break
+
         for hilo in hilos:
             hilo.start()
+
         for hilo in hilos:
             hilo.join()
 
-        reservas = [h for h in hilos]
-        reservas.clear()
-        for clase in list(self.clases.values())[:4]:
-            if clase.horario - ahora > timedelta(hours=48):
-                continue
-            socios_simulados = []
-            for i in range(1, 10):
-                socio = Socio(f"SIMSOC-{i}-{clase.clase_id}",
-                              f"Socio{i}", "Simulado")
-                socio.membresia = MembresiaPremium(ahora + timedelta(days=30))
-                socios_simulados.append(socio)
-
-            def reservar_clase(clase_obj: Clase, socios: list[Socio]) -> None:
-                for socio in socios:
-                    try:
-                        self._contador_reserva += 1
-                        reserva = Reserva(
-                            f"SIM-{clase_obj.clase_id}-{socio.socio_id}",
-                            socio, clase_obj, ahora)
-                        clase_obj.reservar(reserva, ahora)
-                        socio.reservas.append(reserva)
-                    except ValidacionError:
-                        pass
-
-            for socios in [socios_simulados]:
-                hilo = threading.Thread(target=reservar_clase,
-                                        args=(clase, socios))
-                reservas.append(hilo)
-                hilo.start()
-        for hilo in reservas:
-            hilo.join()
         self.guardar()
-        total_reservas = sum(len(c.reservas) for c in self.clases.values())
-        total_activas = sum(
-            r.estado in {"reservada", "asistio"}
-            for c in self.clases.values() for r in c.reservas)
-        return {"aforo": self.personas_en_gimnasio,
-                "reservas_totales": total_reservas,
-                "reservas_activas": total_activas,
-                "errores": errores}
+
+        return {
+            "aforo": self.personas_en_gimnasio,
+            "reservas_totales": len(self.reservas),
+            "reservas_activas": sum(
+                r.estado in {"reservada", "asistio"}
+                for r in self.reservas.values()),
+            "errores": errores
+        }
