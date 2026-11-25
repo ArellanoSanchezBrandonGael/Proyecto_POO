@@ -244,6 +244,52 @@ class CentroDeportivoTests(unittest.TestCase):
 
         self.assertEqual(
             self.centro.ingresos["2026-11:visitante"], 240.0)
+    def test_suspension_por_tres_faltas(self):
+        from centro_deportivo.models import Clase, Socio, Reserva
+        from datetime import timedelta
+
+        socio = Socio("SOC1", "Ana", "Lopez")
+
+        for i in range(3):
+            horario = self.ahora + timedelta(hours=2 + i)
+
+            clase = Clase(
+                f"CL{i}", "Yoga", "Ana", horario, 10)
+
+            reserva = Reserva(
+                f"RES{i}", socio, clase, self.ahora)
+
+            clase.reservar(reserva, self.ahora)
+            clase.pasar_lista("SOC1", horario, False)
+
+        self.assertEqual(socio.contar_faltas("2026-11"), 3)
+
+        ultima_falta = self.ahora + timedelta(hours=4)
+        fin_bloqueo = ultima_falta + timedelta(days=7)
+
+        self.assertEqual(
+            socio.reserva_bloqueada_hasta, fin_bloqueo)
+
+        nueva_clase = Clase(
+            "CL4", "Yoga", "Ana",
+            ultima_falta + timedelta(hours=24), 10)
+
+        reserva = Reserva(
+            "RES4", socio, nueva_clase, ultima_falta)
+
+        with self.assertRaises(ValidacionError):
+            nueva_clase.reservar(reserva, ultima_falta)
+
+        otra_clase = Clase(
+            "CL5", "Yoga", "Ana",
+            fin_bloqueo + timedelta(hours=2), 10)
+
+        reserva = Reserva(
+            "RES5", socio, otra_clase, fin_bloqueo)
+
+        otra_clase.reservar(reserva, fin_bloqueo)
+
+        self.assertEqual(len(otra_clase.reservas), 1)
 
 if __name__ == "__main__":
     unittest.main()
