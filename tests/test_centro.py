@@ -218,6 +218,32 @@ class CentroDeportivoTests(unittest.TestCase):
         self.assertIn("2026-11-23 12:00: 1\n", reporte)
         self.assertIn("2026-11-23 13:00: 0\n", reporte)
         self.assertTrue(ruta.exists())
+    def test_cobro_pase_visitante(self):
+        self.centro.registrar_acceso(
+            "VISITA-1", "gimnasio", "entrada",
+            datetime(2026, 11, 23, 10, 0))
+
+        self.centro.registrar_acceso(
+            "VISITA-1", "gimnasio", "salida",
+            datetime(2026, 11, 23, 11, 0))
+
+        self.centro.registrar_acceso(
+            "VISITA-1", "gimnasio", "entrada",
+            datetime(2026, 11, 23, 12, 0))
+
+        self.assertEqual(
+            self.centro.ingresos["2026-11:visitante"], 120.0)
+
+        self.centro.registrar_acceso(
+            "VISITA-1", "gimnasio", "salida",
+            datetime(2026, 11, 23, 13, 0))
+
+        self.centro.registrar_acceso(
+            "VISITA-1", "gimnasio", "entrada",
+            datetime(2026, 11, 24, 10, 0))
+
+        self.assertEqual(
+            self.centro.ingresos["2026-11:visitante"], 240.0)
 
 if __name__ == "__main__":
     unittest.main()

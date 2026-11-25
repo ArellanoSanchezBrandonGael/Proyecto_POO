@@ -263,8 +263,14 @@ class CentroDeportivo:
                             raise ValidacionError("El pase de visitante solo incluye gimnasio.")
                         if self.personas_en_gimnasio >= self.AFORO_MAXIMO:
                             raise ValidacionError("Aforo completo.")
-                        if ahora - visitante.fecha > timedelta(days=1):
-                            raise ValidacionError("El pase de visitante vencio.")
+                        if ahora.date() < visitante.fecha.date():
+                            raise ValidacionError("Fecha de acceso invalida.")
+
+                        if ahora.date() > visitante.fecha.date():
+                            visitante.fecha = ahora
+                            mes = ahora.strftime("%Y-%m")
+                            clave = f"{mes}:visitante"
+                            self.ingresos[clave] = self.ingresos.get(clave, 0.0) + visitante.precio
                         self.personas_en_gimnasio += 1
                 elif accion == "entrada":
                     if area != "gimnasio":
