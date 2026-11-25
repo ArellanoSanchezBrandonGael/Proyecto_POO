@@ -183,6 +183,24 @@ class CentroDeportivoTests(unittest.TestCase):
 
         with self.assertRaises(PersistenciaError):
             CentroDeportivo(ruta)
+    def test_simulacion_no_modifica_datos_reales(self):
+        from centro_deportivo.models import Clase
+
+        self.centro.clases["CL1"] = Clase(
+            "CL1", "Yoga", "Ana",
+            datetime(2026, 11, 23, 12, 0), 5)
+
+        estado_original = self.centro._serializar()
+
+        for i in range(2):
+            resultado = self.centro.simular_hora_pico(
+                self.ahora)
+
+            self.assertLessEqual(resultado["aforo"], 60)
+            self.assertGreaterEqual(resultado["aforo"], 0)
+            self.assertEqual(resultado["reservas_activas"], 5)
+            self.assertEqual(
+                self.centro._serializar(), estado_original)
 
 
 if __name__ == "__main__":

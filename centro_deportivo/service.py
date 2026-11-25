@@ -9,7 +9,7 @@ from typing import Optional
 from .exceptions import PersistenciaError, ValidacionError
 from .models import (Clase, MembresiaEstudiante, MembresiaGeneral, MembresiaPremium, RegistroAcceso, Reserva, Socio, Visitante)
 from .storage import (JsonRepository, dt_to_text, leer_alumnos, leer_clases, parse_datetime)
-
+from tempfile import TemporaryDirectory
 
 class CentroDeportivo:
     """Coordina las reglas del negocio, las entidades y el almacenamiento."""
@@ -423,9 +423,9 @@ class CentroDeportivo:
         except OSError as exc:
             raise PersistenciaError(f"No se pudo crear el reporte: {exc}")
         return texto
-
-    def simular_hora_pico(self, ahora: datetime,
-                          personas: int = 120) -> dict:
+    def _ejecutar_simulacion(self, ahora: datetime,
+                             personas: int = 120) -> dict:
+    
         """Simula accesos y reservas simultaneas."""
         errores = []
         hilos = []
@@ -493,3 +493,19 @@ class CentroDeportivo:
                 for r in self.reservas.values()),
             "errores": errores
         }
+    def simular_hora_pico(self, ahora: datetime,
+                          personas: int = 120) -> dict:
+        """Ejecuta una simulacion sin modificar los datos reales."""
+        with TemporaryDirectory() as temporal:
+            centro = CentroDeportivo(Path(temporal) / "state.json")
+
+            for clase in self.clases.values():
+                centro.clases[clase.clase_id] = Clase(
+                    clase.clase_id,
+                    clase.nombre,
+                    clase.instructor,
+                    clase.horario,
+                    clase.cupo
+                )
+
+            return centro._ejecutar_simulacion(ahora, personas)
