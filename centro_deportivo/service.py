@@ -371,16 +371,26 @@ class CentroDeportivo:
         asistencias = {}
         for clase in self.clases.values():
             if clase.horario.strftime("%Y-%m") == mes:
-                asistencias[clase.nombre] = sum(
+                clave = f"{clase.clase_id} - {clase.nombre}"
+                asistencias[clave] = sum(
                     r.estado == "asistio" for r in clase.reservas)
+                
 
-        aforo_por_hora: dict[str, int] = {}
-        for registro in self.accesos:
-            if registro.momento.strftime("%Y-%m") == mes and registro.area == "gimnasio":
-                clave = f"{registro.momento.strftime('%Y-%m-%d')} "
-                clave += f"{registro.momento.hour:02d}:00"
-                aforo_por_hora[clave] = (
-                    aforo_por_hora.get(clave, 0) + (1 if registro.accion == "entrada" else -1))
+        aforo_por_hora = {}
+        ocupacion = 0
+
+        for registro in sorted(self.accesos, key=lambda r: r.momento):
+            if registro.area != "gimnasio":
+                continue
+
+            if registro.accion == "entrada":
+                ocupacion += 1
+            else:
+                ocupacion = max(0, ocupacion - 1)
+
+            if registro.momento.strftime("%Y-%m") == mes:
+                clave = registro.momento.strftime("%Y-%m-%d %H:00")
+                aforo_por_hora[clave] = ocupacion
 
         lineas = [f"Reporte del centro deportivo - {mes}", ""]
         lineas.append("Ingresos:")
@@ -397,7 +407,7 @@ class CentroDeportivo:
         else:
             lineas.append("- Sin clases registradas")
         lineas.append("")
-        lineas.append("Movimientos de personas por hora:")
+        lineas.append("Ocupacion del gimnasio por hora:")
         if aforo_por_hora:
             for hora, movimiento in sorted(aforo_por_hora.items()):
                 lineas.append(f"- {hora}: {movimiento}")
