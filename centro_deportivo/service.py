@@ -28,6 +28,7 @@ class CentroDeportivo:
         self.reservas: dict[str, Reserva] = {}
         self.ingresos: dict[str, float] = {}
         self.personas_en_gimnasio = 0
+        self.personas_dentro = set()
         self._contador_socio = 0
         self._contador_reserva = 0
         self._contador_acceso = 0
@@ -40,6 +41,9 @@ class CentroDeportivo:
         self._contador_reserva = datos.get("contador_reserva", 0)
         self._contador_acceso = datos.get("contador_acceso", 0)
         self.personas_en_gimnasio = datos.get("personas_en_gimnasio", 0)
+        self.personas_dentro = set(
+            tuple(persona) for persona in datos.get("personas_dentro", [])
+        )
         self.ingresos = datos.get("ingresos", {})
         self.alumnos = datos.get("alumnos", {})
 
@@ -120,6 +124,7 @@ class CentroDeportivo:
             "contador_reserva": self._contador_reserva,
             "contador_acceso": self._contador_acceso,
             "personas_en_gimnasio": self.personas_en_gimnasio,
+            "personas_dentro": list(self.personas_dentro),
             "ingresos": self.ingresos,
             "alumnos": self.alumnos,
             "socios": socios, "clases": clases, "reservas": reservas,
@@ -223,6 +228,13 @@ class CentroDeportivo:
         if area not in {"gimnasio", "alberca", "clase"}:
             raise ValidacionError("Area invalida.")
         with self.lock:
+            clave_acceso = (persona_id, area)
+
+            if accion == "entrada" and clave_acceso in self.personas_dentro:
+             raise ValidacionError("La persona ya se encuentra dentro de esta area.")
+
+            if accion == "salida" and clave_acceso not in self.personas_dentro:
+                raise ValidacionError("La persona no se encuentra dentro de esta area.")
             socio = self.socios.get(persona_id)
             tipo_persona = "socio"
             if socio:
@@ -270,6 +282,10 @@ class CentroDeportivo:
 
             if accion == "salida" and area == "gimnasio":
                 self.personas_en_gimnasio = max(0, self.personas_en_gimnasio - 1)
+            if accion == "entrada":
+                    self.personas_dentro.add(clave_acceso)
+            else:
+                 self.personas_dentro.remove(clave_acceso)
             self._contador_acceso += 1
             registro = RegistroAcceso(
                 f"ACC-{self._contador_acceso:06d}", persona_id,
