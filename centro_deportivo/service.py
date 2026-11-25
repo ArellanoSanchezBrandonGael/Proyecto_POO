@@ -214,6 +214,10 @@ class CentroDeportivo:
         """Valida un acceso, actualiza el aforo y guarda el movimiento."""
         accion = accion.lower()
         area = area.lower()
+        # Validar el horario del centro deportivo
+        if accion == "entrada":
+            if ahora.weekday() == 6 or not (6 <= ahora.hour < 22):
+                 raise ValidacionError("Fuera del horario del centro deportivo.")
         if accion not in {"entrada", "salida"}:
             raise ValidacionError("Accion invalida: entrada o salida.")
         if area not in {"gimnasio", "alberca", "clase"}:
