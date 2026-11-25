@@ -32,7 +32,10 @@ class CentroDeportivo:
         self._contador_socio = 0
         self._contador_reserva = 0
         self._contador_acceso = 0
-        self._cargar()
+        try:
+            self._cargar()
+        except (KeyError, TypeError, ValueError, AttributeError) as exc:
+            raise PersistenciaError("El archivo de estado contiene datos invalidos.") from exc
 
     def _cargar(self) -> None:
         """Reconstruye los objetos del dominio a partir del archivo JSON."""

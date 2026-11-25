@@ -26,8 +26,11 @@ class JsonRepository:
         try:
             with self.lock:
                 with self.ruta.open("r", encoding="utf-8") as archivo:
-                    return json.load(archivo)
-        except (json.JSONDecodeError, OSError) as exc:
+                 datos = json.load(archivo)
+                 if not isinstance(datos, dict):
+                    raise PersistenciaError("El archivo JSON tiene una estructura invalida.")
+                return datos
+        except (json.JSONDecodeError, OSError, UnicodeError) as exc:
             raise PersistenciaError(f"No se pudo cargar {self.ruta}: {exc}")
 
     def guardar(self, datos: dict) -> None:
@@ -89,7 +92,7 @@ def leer_alumnos(ruta: Path) -> tuple[list[dict], list[str]]:
                         errores.append("El CSV de alumnos no contiene registros.")
     except FileNotFoundError:
         errores.append(f"Archivo no encontrado: {ruta}")
-    except (OSError, csv.Error) as exc:
+    except (OSError, csv.Error, UnicodeError) as exc:
         errores.append(f"No se pudo leer {ruta}: {exc}")
     return validos, errores
 
@@ -135,6 +138,6 @@ def leer_clases(ruta: Path) -> tuple[list[dict], list[str]]:
                         errores.append("El CSV de clases no contiene registros.")
     except FileNotFoundError:
         errores.append(f"Archivo no encontrado: {ruta}")
-    except (OSError, csv.Error) as exc:
+    except (OSError, csv.Error, UnicodeError) as exc:
         errores.append(f"No se pudo leer {ruta}: {exc}")
     return validos, errores

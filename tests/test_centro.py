@@ -157,6 +157,32 @@ class CentroDeportivoTests(unittest.TestCase):
 
         with self.assertRaises(ValidacionError):
             clase.pasar_lista("SOC1", self.ahora, True)
+    def test_json_danado(self):
+        from centro_deportivo.exceptions import PersistenciaError
+
+        ruta = self.centro.repository.ruta
+        ruta.write_text("{archivo incorrecto", encoding="utf-8")
+
+        with self.assertRaises(PersistenciaError):
+            CentroDeportivo(ruta)
+
+    def test_json_estructura_invalida(self):
+        from centro_deportivo.exceptions import PersistenciaError
+
+        ruta = self.centro.repository.ruta
+        ruta.write_text("[]", encoding="utf-8")
+
+        with self.assertRaises(PersistenciaError):
+            CentroDeportivo(ruta)
+
+    def test_json_datos_invalidos(self):
+        from centro_deportivo.exceptions import PersistenciaError
+
+        ruta = self.centro.repository.ruta
+        ruta.write_text('{"socios": [{}]}', encoding="utf-8")
+
+        with self.assertRaises(PersistenciaError):
+            CentroDeportivo(ruta)
 
 
 if __name__ == "__main__":
