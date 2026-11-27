@@ -9,7 +9,7 @@ from typing import Optional
 from .exceptions import PersistenciaError, ValidacionError
 from .models import (Clase, MembresiaEstudiante, MembresiaGeneral, MembresiaPremium, RegistroAcceso, Reserva, Socio, Visitante)
 from .storage import (JsonRepository, dt_to_text, leer_alumnos, leer_clases, parse_datetime)
-
+from tempfile import TemporaryDirectory
 
 class CentroDeportivo:
     """Coordina las reglas del negocio, las entidades y el almacenamiento."""
@@ -28,10 +28,14 @@ class CentroDeportivo:
         self.reservas: dict[str, Reserva] = {}
         self.ingresos: dict[str, float] = {}
         self.personas_en_gimnasio = 0
+        self.personas_dentro = set()
         self._contador_socio = 0
         self._contador_reserva = 0
         self._contador_acceso = 0
-        self._cargar()
+        try:
+            self._cargar()
+        except (KeyError, TypeError, ValueError, AttributeError) as exc:
+            raise PersistenciaError("El archivo de estado contiene datos invalidos.") from exc
 
     def _cargar(self) -> None:
         """Reconstruye los objetos del dominio a partir del archivo JSON."""
@@ -40,6 +44,9 @@ class CentroDeportivo:
         self._contador_reserva = datos.get("contador_reserva", 0)
         self._contador_acceso = datos.get("contador_acceso", 0)
         self.personas_en_gimnasio = datos.get("personas_en_gimnasio", 0)
+        self.personas_dentro = set(
+            tuple(persona) for persona in datos.get("personas_dentro", [])
+        )
         self.ingresos = datos.get("ingresos", {})
         self.alumnos = datos.get("alumnos", {})
 
@@ -120,6 +127,7 @@ class CentroDeportivo:
             "contador_reserva": self._contador_reserva,
             "contador_acceso": self._contador_acceso,
             "personas_en_gimnasio": self.personas_en_gimnasio,
+            "personas_dentro": list(self.personas_dentro),
             "ingresos": self.ingresos,
             "alumnos": self.alumnos,
             "socios": socios, "clases": clases, "reservas": reservas,
@@ -131,12 +139,20 @@ class CentroDeportivo:
         self.repository.guardar(self._serializar())
 
     def importar_alumnos(self, ruta: Path) -> list[str]:
-        """Carga alumnos validos y devuelve los errores de filas rechazadas."""
+        """Actualiza el padron de alumnos e informa las filas rechazadas."""
         validos, errores = leer_alumnos(ruta)
+
+        if not validos:
+            return errores
+
         with self.lock:
+            self.alumnos.clear()
+
             for alumno in validos:
                 self.alumnos[alumno["id"]] = alumno
+
             self.guardar()
+
         return errores
 
     def registrar_socio(self, nombre: str, apellido: str,
@@ -189,6 +205,15 @@ class CentroDeportivo:
             socio = self.socios.get(socio_id)
             if not socio or not socio.membresia:
                 raise ValidacionError("El socio no tiene membresia.")
+            if socio.membresia.tipo == "estudiante":
+                inscrito = any(
+                    alumno.get("nombre", "").lower() == socio.nombre.lower()
+                    and alumno.get("apellido", "").lower() == socio.apellido.lower()
+                    for alumno in self.alumnos.values()
+                )
+
+                if not socio.es_alumno or not inscrito:
+                    raise ValidacionError("El socio no aparece en el archivo de alumnos inscritos.")
             socio.membresia.renovar(ahora)
             mes = ahora.strftime("%Y-%m")
             clave = f"{mes}:{socio.membresia.tipo}"
@@ -201,24 +226,50 @@ class CentroDeportivo:
         return self.contratar_membresia(socio_id, tipo, ahora)
 
     def cargar_clases(self, ruta: Path) -> list[str]:
-        """Importa las clases validas de un archivo CSV."""
+        """Importa clases validas sin reemplazar las existentes."""
         validos, errores = leer_clases(ruta)
+
         with self.lock:
             for item in validos:
-                clase = Clase(item["id"], item["nombre"], item["instructor"], item["horario"], item["cupo"])
+                if item["id"] in self.clases:
+                    errores.append(
+                        f"La clase {item['id']} ya existe.")
+                    continue
+
+                clase = Clase(
+                    item["id"],
+                    item["nombre"],
+                    item["instructor"],
+                    item["horario"],
+                    item["cupo"]
+                )
+
                 self.clases[clase.clase_id] = clase
+
             self.guardar()
+
         return errores
 
     def registrar_acceso(self, persona_id: str, area: str, accion: str, ahora: datetime) -> str:
         """Valida un acceso, actualiza el aforo y guarda el movimiento."""
         accion = accion.lower()
         area = area.lower()
+        # Validar el horario del centro deportivo
+        if accion == "entrada":
+            if ahora.weekday() == 6 or not (6 <= ahora.hour < 22):
+                 raise ValidacionError("Fuera del horario del centro deportivo.")
         if accion not in {"entrada", "salida"}:
             raise ValidacionError("Accion invalida: entrada o salida.")
         if area not in {"gimnasio", "alberca", "clase"}:
             raise ValidacionError("Area invalida.")
         with self.lock:
+            clave_acceso = (persona_id, area)
+
+            if accion == "entrada" and clave_acceso in self.personas_dentro:
+             raise ValidacionError("La persona ya se encuentra dentro de esta area.")
+
+            if accion == "salida" and clave_acceso not in self.personas_dentro:
+                raise ValidacionError("La persona no se encuentra dentro de esta area.")
             socio = self.socios.get(persona_id)
             tipo_persona = "socio"
             if socio:
@@ -244,8 +295,14 @@ class CentroDeportivo:
                             raise ValidacionError("El pase de visitante solo incluye gimnasio.")
                         if self.personas_en_gimnasio >= self.AFORO_MAXIMO:
                             raise ValidacionError("Aforo completo.")
-                        if ahora - visitante.fecha > timedelta(days=1):
-                            raise ValidacionError("El pase de visitante vencio.")
+                        if ahora.date() < visitante.fecha.date():
+                            raise ValidacionError("Fecha de acceso invalida.")
+
+                        if ahora.date() > visitante.fecha.date():
+                            visitante.fecha = ahora
+                            mes = ahora.strftime("%Y-%m")
+                            clave = f"{mes}:visitante"
+                            self.ingresos[clave] = self.ingresos.get(clave, 0.0) + visitante.precio
                         self.personas_en_gimnasio += 1
                 elif accion == "entrada":
                     if area != "gimnasio":
@@ -266,6 +323,10 @@ class CentroDeportivo:
 
             if accion == "salida" and area == "gimnasio":
                 self.personas_en_gimnasio = max(0, self.personas_en_gimnasio - 1)
+            if accion == "entrada":
+                    self.personas_dentro.add(clave_acceso)
+            else:
+                 self.personas_dentro.remove(clave_acceso)
             self._contador_acceso += 1
             registro = RegistroAcceso(
                 f"ACC-{self._contador_acceso:06d}", persona_id,
@@ -351,17 +412,45 @@ class CentroDeportivo:
         asistencias = {}
         for clase in self.clases.values():
             if clase.horario.strftime("%Y-%m") == mes:
-                asistencias[clase.nombre] = sum(
+                clave = f"{clase.clase_id} - {clase.nombre}"
+                asistencias[clave] = sum(
                     r.estado == "asistio" for r in clase.reservas)
+                
 
-        aforo_por_hora: dict[str, int] = {}
-        for registro in self.accesos:
-            if registro.momento.strftime("%Y-%m") == mes and registro.area == "gimnasio":
-                clave = f"{registro.momento.strftime('%Y-%m-%d')} "
-                clave += f"{registro.momento.hour:02d}:00"
-                aforo_por_hora[clave] = (
-                    aforo_por_hora.get(clave, 0) + (1 if registro.accion == "entrada" else -1))
+        aforo_por_hora = {}
+        ocupacion = 0
 
+        inicio = datetime.strptime(mes, "%Y-%m")
+
+        if inicio.month == 12:
+            fin = datetime(inicio.year + 1, 1, 1)
+        else:
+            fin = datetime(inicio.year, inicio.month + 1, 1)
+
+        registros = sorted(
+            [r for r in self.accesos if r.area == "gimnasio"],
+            key=lambda r: r.momento
+        )
+
+        indice = 0
+        hora = inicio
+
+        while hora < fin:
+            siguiente_hora = hora + timedelta(hours=1)
+
+            while indice < len(registros) and registros[indice].momento < siguiente_hora:
+                if registros[indice].accion == "entrada":
+                    ocupacion += 1
+                else:
+                    ocupacion = max(0, ocupacion - 1)
+
+                indice += 1
+
+            if hora.weekday() < 6 and 6 <= hora.hour < 22:
+                clave = hora.strftime("%Y-%m-%d %H:00")
+                aforo_por_hora[clave] = ocupacion
+
+            hora = siguiente_hora
         lineas = [f"Reporte del centro deportivo - {mes}", ""]
         lineas.append("Ingresos:")
         if ingresos:
@@ -377,7 +466,7 @@ class CentroDeportivo:
         else:
             lineas.append("- Sin clases registradas")
         lineas.append("")
-        lineas.append("Movimientos de personas por hora:")
+        lineas.append("Ocupacion del gimnasio por hora:")
         if aforo_por_hora:
             for hora, movimiento in sorted(aforo_por_hora.items()):
                 lineas.append(f"- {hora}: {movimiento}")
@@ -390,79 +479,89 @@ class CentroDeportivo:
         except OSError as exc:
             raise PersistenciaError(f"No se pudo crear el reporte: {exc}")
         return texto
+    def _ejecutar_simulacion(self, ahora: datetime,
+                             personas: int = 120) -> dict:
+    
+        """Simula accesos y reservas simultaneas."""
+        errores = []
+        hilos = []
 
-    def simular_hora_pico(self, ahora: datetime,
-                          personas: int = 120) -> dict:
-        """Simula entradas simultaneas y reservas para poner a prueba los cupos."""
-        errores: list[str] = []
-
-        for clase in self.clases.values():
-            if clase.horario <= ahora:
-                continue
-            disponibles = clase.lugares_disponibles
-            break
-
-        def torniquete(indice: int) -> None:
+        def torniquete(indice):
             for i in range(personas // 4):
                 persona_id = f"SIM-{indice}-{i}"
-                if random.choice([True, False]):
-                    try:
-                        self.registrar_acceso(persona_id, "gimnasio",
-                                              "entrada", ahora)
-                    except ValidacionError as exc:
-                        if "Aforo completo" not in str(exc):
-                            errores.append(str(exc))
-                else:
-                    try:
-                        self.registrar_acceso(persona_id, "gimnasio",
-                                              "salida", ahora)
-                    except ValidacionError:
-                        pass
 
-        hilos = [threading.Thread(target=torniquete, args=(i,))
-                 for i in range(4)]
+                try:
+                    self.registrar_acceso(
+                        persona_id, "gimnasio", "entrada", ahora)
+
+                    if random.choice([True, False]):
+                        self.registrar_acceso(
+                            persona_id, "gimnasio", "salida", ahora)
+
+                except ValidacionError as exc:
+                    errores.append(str(exc))
+
+        def reservar_clase(socio_id, clase_id):
+            try:
+                self.reservar(socio_id, clase_id, ahora)
+            except ValidacionError as exc:
+                errores.append(str(exc))
+
+        for i in range(4):
+            hilo = threading.Thread(
+                target=torniquete, args=(i,))
+            hilos.append(hilo)
+
+        for clase in self.clases.values():
+            anticipacion = clase.horario - ahora
+
+            if timedelta(0) < anticipacion <= timedelta(hours=48):
+                cantidad = clase.lugares_disponibles + 5
+
+                for i in range(cantidad):
+                    socio = self.registrar_socio(
+                        f"Simulado{i}", "Prueba")
+
+                    self.contratar_membresia(
+                        socio.socio_id, "premium", ahora)
+
+                    hilo = threading.Thread(
+                        target=reservar_clase,
+                        args=(socio.socio_id, clase.clase_id))
+
+                    hilos.append(hilo)
+
+                break
+
         for hilo in hilos:
             hilo.start()
+
         for hilo in hilos:
             hilo.join()
 
-        reservas = [h for h in hilos]
-        reservas.clear()
-        for clase in list(self.clases.values())[:4]:
-            if clase.horario - ahora > timedelta(hours=48):
-                continue
-            socios_simulados = []
-            for i in range(1, 10):
-                socio = Socio(f"SIMSOC-{i}-{clase.clase_id}",
-                              f"Socio{i}", "Simulado")
-                socio.membresia = MembresiaPremium(ahora + timedelta(days=30))
-                socios_simulados.append(socio)
-
-            def reservar_clase(clase_obj: Clase, socios: list[Socio]) -> None:
-                for socio in socios:
-                    try:
-                        self._contador_reserva += 1
-                        reserva = Reserva(
-                            f"SIM-{clase_obj.clase_id}-{socio.socio_id}",
-                            socio, clase_obj, ahora)
-                        clase_obj.reservar(reserva, ahora)
-                        socio.reservas.append(reserva)
-                    except ValidacionError:
-                        pass
-
-            for socios in [socios_simulados]:
-                hilo = threading.Thread(target=reservar_clase,
-                                        args=(clase, socios))
-                reservas.append(hilo)
-                hilo.start()
-        for hilo in reservas:
-            hilo.join()
         self.guardar()
-        total_reservas = sum(len(c.reservas) for c in self.clases.values())
-        total_activas = sum(
-            r.estado in {"reservada", "asistio"}
-            for c in self.clases.values() for r in c.reservas)
-        return {"aforo": self.personas_en_gimnasio,
-                "reservas_totales": total_reservas,
-                "reservas_activas": total_activas,
-                "errores": errores}
+
+        return {
+            "aforo": self.personas_en_gimnasio,
+            "reservas_totales": len(self.reservas),
+            "reservas_activas": sum(
+                r.estado in {"reservada", "asistio"}
+                for r in self.reservas.values()),
+            "errores": errores
+        }
+    def simular_hora_pico(self, ahora: datetime,
+                          personas: int = 120) -> dict:
+        """Ejecuta una simulacion sin modificar los datos reales."""
+        with TemporaryDirectory() as temporal:
+            centro = CentroDeportivo(Path(temporal) / "state.json")
+
+            for clase in self.clases.values():
+                centro.clases[clase.clase_id] = Clase(
+                    clase.clase_id,
+                    clase.nombre,
+                    clase.instructor,
+                    clase.horario,
+                    clase.cupo
+                )
+
+            return centro._ejecutar_simulacion(ahora, personas)

@@ -6,3 +6,5 @@ reportes/*.txt
 !datos/alumnos.csv
 !datos/alumnos_errores.csv
 !datos/clases.csv
+datos/state_respaldo.json
+parachat.zip
